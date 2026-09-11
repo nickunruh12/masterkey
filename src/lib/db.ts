@@ -14,7 +14,14 @@ function clientPromise(): Promise<MongoClient> {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error("MONGODB_URI is not set");
   if (!globalThis._mkMongoClientPromise) {
-    globalThis._mkMongoClientPromise = new MongoClient(uri).connect();
+    // Drop the cached promise if the connect fails, so the NEXT request retries.
+    // Caching the rejection instead would pin a warm serverless instance to that
+    // error forever — one transient Atlas blip (or an IP-allowlist gap) would then
+    // take every DB-backed route down until a redeploy replaced the instance.
+    globalThis._mkMongoClientPromise = new MongoClient(uri).connect().catch((err) => {
+      globalThis._mkMongoClientPromise = undefined;
+      throw err;
+    });
   }
   return globalThis._mkMongoClientPromise;
 }
