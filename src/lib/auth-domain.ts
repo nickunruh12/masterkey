@@ -1,9 +1,14 @@
-// Sign-in can OPTIONALLY be restricted to one or more email domains via the
-// NEXT_PUBLIC_SIGNIN_ALLOWLIST env var (comma-separated; the leading "@" is
-// optional), e.g. "@coinbase.com" or "coinbase.com,example.org".
+// Sign-in can OPTIONALLY be restricted via the NEXT_PUBLIC_SIGNIN_ALLOWLIST env
+// var (comma-separated). Each entry is either:
 //
-// - Set    → only emails in those domains may sign in (this is how masterkey.sh
-//            keeps itself to its intended audience).
+//   - an email DOMAIN   — "@coinbase.com" or "coinbase.com" (leading "@" optional)
+//   - a full ADDRESS    — "ash@coinbase.com"
+//
+// so a self-hoster on a shared provider (gmail.com, outlook.com) can allow just
+// themselves, which a domain-only allowlist cannot express.
+//
+// - Set    → only matching emails may sign in (this is how masterkey.sh keeps
+//            itself to its intended audience).
 // - Unset/blank → ANY email may sign in. This is the default, so anyone who
 //            forks/self-hosts this repo is NOT blocked by anything.
 //
@@ -14,37 +19,56 @@
 // cannot be spoofed by editing the request in devtools. The sign-in dialog only
 // mirrors this check for UX. Shared here so the two never drift.
 
-/**
- * The configured allowed email domains, lowercased and with any leading "@"
- * stripped. An empty array means "no restriction — any email may sign in".
- */
-export function allowedEmailDomains(): string[] {
-  const raw = process.env.NEXT_PUBLIC_SIGNIN_ALLOWLIST ?? "";
-  return raw
+/** Raw allowlist entries, lowercased and trimmed. Empty array ⇒ no restriction. */
+function entries(): string[] {
+  return (process.env.NEXT_PUBLIC_SIGNIN_ALLOWLIST ?? "")
     .split(",")
-    .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+    .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
 }
 
-/** True when an allowlist is configured (sign-in is domain-restricted). */
+/**
+ * The configured allowed email domains, with any leading "@" stripped. An entry
+ * is a domain when it has no "@" other than an optional leading one.
+ */
+export function allowedEmailDomains(): string[] {
+  return entries()
+    .filter((e) => !e.slice(1).includes("@"))
+    .map((e) => e.replace(/^@/, ""))
+    .filter(Boolean);
+}
+
+/** The configured allowed full email addresses ("user@host" entries). */
+export function allowedSignInEmails(): string[] {
+  return entries().filter((e) => e.slice(1).includes("@"));
+}
+
+/** Human-readable allowlist for UI copy: addresses as-is, domains as "@domain". */
+export function allowedSignInLabels(): string[] {
+  return [...allowedSignInEmails(), ...allowedEmailDomains().map((d) => `@${d}`)];
+}
+
+/** True when an allowlist is configured (sign-in is restricted). */
 export function isSignInRestricted(): boolean {
-  return allowedEmailDomains().length > 0;
+  return entries().length > 0;
 }
 
 /**
  * True if `email` may sign in.
  *
- * When no allowlist is configured, EVERY email is allowed. Otherwise the email's
- * domain must EXACTLY match one of the allowlisted domains — we split on the LAST
- * "@", so subdomains (`x@corp.coinbase.com`) and look-alikes
- * (`x@coinbase.com.evil.com`) are rejected.
+ * When no allowlist is configured, EVERY email is allowed. Otherwise the address
+ * must either match an allowlisted address exactly, or its domain must EXACTLY
+ * match an allowlisted domain — we split on the LAST "@", so subdomains
+ * (`x@corp.coinbase.com`) and look-alikes (`x@coinbase.com.evil.com`) are rejected.
  */
 export function isAllowedEmail(email: string | null | undefined): boolean {
   const domains = allowedEmailDomains();
-  if (domains.length === 0) return true; // no restriction configured
+  const emails = allowedSignInEmails();
+  if (domains.length === 0 && emails.length === 0) return true; // no restriction
   if (!email) return false;
-  const at = email.lastIndexOf("@");
+  const addr = email.trim().toLowerCase();
+  if (emails.includes(addr)) return true;
+  const at = addr.lastIndexOf("@");
   if (at === -1) return false;
-  const domain = email.slice(at + 1).trim().toLowerCase();
-  return domains.includes(domain);
+  return domains.includes(addr.slice(at + 1));
 }

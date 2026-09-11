@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { validateCdpAccessToken, extractIdentity } from "@/lib/cdp";
-import { isAllowedEmail, allowedEmailDomains } from "@/lib/auth-domain";
+import { isAllowedEmail, allowedSignInLabels } from "@/lib/auth-domain";
 import { upsertUserByWallet } from "@/lib/users";
 import { signSession, SESSION_COOKIE, sessionCookieOptions } from "@/lib/session";
 
@@ -42,11 +42,11 @@ export async function POST(req: Request) {
   // email → no session is ever minted → the app grants zero access. This is the
   // authoritative enforcement point; the sign-in dialog only mirrors it for UX.
   if (!isAllowedEmail(email)) {
-    const domains = allowedEmailDomains().map((d) => `@${d}`).join(", ");
+    const allowed = allowedSignInLabels().join(", ");
     return NextResponse.json(
       {
         error: "restricted",
-        message: `Sign-in is restricted to ${domains} email addresses.`,
+        message: `Sign-in is restricted to ${allowed}.`,
       },
       { status: 403 },
     );

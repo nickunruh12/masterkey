@@ -5,7 +5,7 @@
 // first-party server session (/api/auth/check) when CDP's isSignedIn flips true — this dialog
 // only drives the CDP sign-in itself. See MCP_SPEC.md M1.
 //
-// Sign-in can be restricted to specific email domains via NEXT_PUBLIC_SIGNIN_ALLOWLIST
+// Sign-in can be restricted to specific email domains or addresses via NEXT_PUBLIC_SIGNIN_ALLOWLIST
 // (see src/lib/auth-domain.ts). When a restriction is configured, we block a
 // non-allowlisted email BEFORE calling CDP, so a normal user never triggers an OTP
 // send. That check is UX only — the real, unbypassable gate is server-side in
@@ -14,7 +14,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useSignInWithEmail, useVerifyEmailOTP } from "@coinbase/cdp-hooks";
-import { isAllowedEmail, allowedEmailDomains, isSignInRestricted } from "@/lib/auth-domain";
+import { isAllowedEmail, allowedSignInLabels, isSignInRestricted } from "@/lib/auth-domain";
 import {
   Dialog,
   DialogContent,
@@ -36,11 +36,12 @@ export function SignInDialog({
   const { signInWithEmail } = useSignInWithEmail();
   const { verifyEmailOTP } = useVerifyEmailOTP();
 
-  // Optional email-domain allowlist (empty ⇒ any email may sign in).
+  // Optional sign-in allowlist — domains ("@acme.com") and/or full addresses
+  // ("ash@acme.com"). Empty ⇒ any email may sign in.
   const restricted = isSignInRestricted();
-  const domains = allowedEmailDomains();
-  const primaryDomain = domains[0];
-  const domainList = domains.map((d) => `@${d}`).join(", ");
+  const labels = allowedSignInLabels();
+  const primaryLabel = labels[0];
+  const labelList = labels.join(", ");
 
   const [phase, setPhase] = useState<"email" | "otp">("email");
   const [email, setEmail] = useState("");
@@ -63,7 +64,7 @@ export function SignInDialog({
     // non-allowlisted address. (Authoritative enforcement is still server-side in
     // /api/auth/check.) With no allowlist, isAllowedEmail() is always true.
     if (!isAllowedEmail(email)) {
-      setError(`Sign-in is restricted to ${domainList} email addresses.`);
+      setError(`Sign-in is restricted to ${labelList}.`);
       return;
     }
     setBusy(true);
@@ -110,7 +111,7 @@ export function SignInDialog({
           <DialogDescription>
             {phase === "email"
               ? restricted
-                ? `Sign in with your ${primaryDomain ? `@${primaryDomain}` : "allowlisted"} email.`
+                ? `Sign in with your ${primaryLabel ?? "allowlisted"} email.`
                 : "Sign in with your email to continue."
               : `Enter the 6-digit code sent to ${email}.`}
           </DialogDescription>
@@ -127,7 +128,11 @@ export function SignInDialog({
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder={`you@${primaryDomain ?? "example.com"}`}
+                placeholder={
+                  primaryLabel?.startsWith("@")
+                    ? `you${primaryLabel}`
+                    : (primaryLabel ?? "you@example.com")
+                }
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
